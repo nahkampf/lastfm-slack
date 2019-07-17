@@ -26,7 +26,7 @@ function getTrackInfo()
             'user' => getenv('LASTFM_USER'),
             'limit' => '1'
         ]);
-        return $trackInfo[0];
+        return (isset($trackInfo[0]["nowplaying"])) ? $trackInfo[0] : null;
     } catch (Exception $e) {
         echo 'Unable to authenticate against Last.fm API.', PHP_EOL;
         exit;
@@ -36,39 +36,44 @@ function getTrackInfo()
 /**
  * @param $status
  */
-function updateSlackStatus($status)
+function updateSlackStatus($status, $emoji = ':hear_no_evil:')
 {
-    echo $status . PHP_EOL;
+    if ($status) echo $status . PHP_EOL;
+    if ($emoji === 0) $emoji = '';
     $client = new Client();
     $client->post('https://slack.com/api/users.profile.set', [
         'form_params' => [
             'token' => getenv('SLACK_TOKEN'),
             'profile' => json_encode([
                 'status_text' => $status,
-                'status_emoji' => ':hear_no_evil:'
+                'status_emoji' => $emoji
             ])
         ]
     ]);
 }
 
-$trackInfo = getTrackInfo();
-$currentStatus = $trackInfo['artist']['name'] . ' - ' . $trackInfo['name'];
-updateSlackStatus($currentStatus);
-
+echo "Starting up, waiting for input..." . PHP_EOL;
 $loop = Factory::create();
 $pcntl = new PCNTL($loop);
 
 $pcntl->on(SIGINT, function () {
-    updateSlackStatus('Not currently playing');
+    updateSlackStatus('', 0);
+    echo "Process terminated, shutting down!" . PHP_EOL;
     die();
 });
 
 $loop->addPeriodicTimer(10, function () use (&$currentStatus) {
     $trackInfo = getTrackInfo();
-    $status = $trackInfo['artist']['name'] . ' - ' . $trackInfo['name'];
-    if ($currentStatus !== $status) {
-        updateSlackStatus($status);
-        $currentStatus = $status;
+    if (!$trackInfo) {
+        updateSlackStatus('', 0);
+        $currentStatus = '';
+    }
+    else {
+        $status = $trackInfo['artist']['name'] . ' - ' . $trackInfo['name'];
+        if ($currentStatus !== $status) {
+            updateSlackStatus($status);
+            $currentStatus = $status;
+        }
     }
 });
 
